@@ -959,7 +959,17 @@ rule Binning_binette:
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/binette" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/binette; fi
         export PYTHONHASHSEED={params.seed}
         dir={loc}/{sample}/tmp/binning/round_{params.round}
-        binette -d $dir/vamb/bins $dir/metabat2 $dir/semibin/output_bins -c {input.asm} -o $dir/binette -w {params.weight} -m {params.compl} -t {threads}
+        # Binette 1.1.2 crashes when DIAMOND aligns none of the round's proteins (fixed in 1.2.0);
+        # with no protein to assess its bins by, the round has no bins
+        binette -d $dir/vamb/bins $dir/metabat2 $dir/semibin/output_bins -c {input.asm} -o $dir/binette -w {params.weight} -m {params.compl} -t {threads} || {{
+            if [ -e $dir/binette/temporary_files/diamond_result.tsv.gz ] && [ $(zcat $dir/binette/temporary_files/diamond_result.tsv.gz | wc -l) -eq 0 ]; then
+                echo "Binette: DIAMOND aligned none of the proteins, round {params.round} has no bins"
+                mkdir -p $dir/binette/final_bins
+                printf "bin_id\\torigin\\tname\\tcompleteness\\tcontamination\\n" > {output}
+            else
+                exit 1
+            fi
+        }}
         if ! grep -q "binette" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "binette " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi  
         """
 
@@ -982,7 +992,25 @@ rule Binning_comebin:
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/comebin" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/comebin; fi
         n_contigs=$(grep ">" {input.contigs} | wc -l)
         if [ $n_contigs -lt 1024 ]; then batch_size=$n_contigs; else batch_size=1024;fi
-        run_comebin.sh -a {input.contigs} -o {loc}/{sample}/tmp/binning/round_{params.round}/comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size
+        comebin={loc}/{sample}/tmp/binning/round_{params.round}/comebin
+        seed={input.contigs}.bacar_marker.2quarter_lencutoff_1001.seed
+        run_comebin.sh -a {input.contigs} -o $comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size || [ ! -s $seed ]
+        # When the contigs carry too few marker genes, COMEbin's test_getmarker_2quarter.pl
+        # writes no seed file and COMEbin ends without result. Retry with the seeds of the script's own
+        # "max effort" mode (which COMEbin never uses); with still no seeds, the round has no bins.
+        if [ ! -s $comebin/comebin_res/comebin_res.tsv ] && [ ! -s $seed ] && [ -s {input.contigs}.bacar_marker.hmmout ]; then
+            marker=$(dirname $(realpath $(command -v run_comebin.sh)))/auxiliary/test_getmarker_2quarter.pl
+            perl -e '@a = @ARGV; @ARGV = @a[0..3]; do $a[4] or die "$a[4]: $@ $!\\n"; gethmmmarker(@a[0..3], 1)' {input.contigs}.bacar_marker.hmmout {input.contigs} 1001 $seed $marker
+            if [ -s $seed ]; then
+                echo "COMEbin: too few marker genes for its seeds, retrying with $(wc -l < $seed) seed contigs"
+                rm -rf $comebin/comebin_res/cluster_res
+                run_comebin.sh -a {input.contigs} -o $comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size
+            fi
+        fi
+        if [ ! -s $comebin/comebin_res/comebin_res.tsv ] && [ ! -s $seed ] && [ -s {input.contigs}.bacar_marker.hmmout ]; then
+            echo "COMEbin: no marker genes for its seeds, round {params.round} has no bins"
+            mkdir -p $comebin/comebin_res/comebin_res_bins && touch $comebin/comebin_res/comebin_res.tsv
+        fi
         if ! grep -q "comebin" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "comebin " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi	
         """
 
@@ -1009,15 +1037,19 @@ rule Binning_qc:
         mkdir {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit
         mkdir {loc}/{sample}/tmp/binning/round_{params.round}/bins
         
-        if [ $(basename {input}) == "final_bins_quality_reports.tsv" ];
+        if [ $(basename {input}) == "final_bins_quality_reports.tsv" ] && ls {params.dir}/*.fa > /dev/null 2>&1;
         then
             rsync {params.dir}/*.fa {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit/.
             for bin in {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit/*.fa; do mv "$bin" "$(dirname "$bin")/{sample}.bin.{params.round}.$(basename "$bin" | sed 's/^bin_//')"; done
             cut -f1,4,5 {input} | sed 's/^/{sample}.bin.{params.round}./' > {output};
-        else
+        elif ls {params.dir}/*.fa > /dev/null 2>&1;
+        then
             n=1 && for i in {params.dir}/*.fa; do rsync $i {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit/{sample}.bin.{params.round}.${{n}}.fa && n=$(($n+1)); done
             checkm2 predict -x .fa -i {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit -o {loc}/{sample}/tmp/binning/round_{params.round}/checkm2 -t {threads}
             cut -f1,2,3 {loc}/{sample}/tmp/binning/round_{params.round}/checkm2/quality_report.tsv > {output}
+        else
+            # a round without bins (see Binning_comebin, Binning_binette) gets an empty quality table
+            printf "Name\\tCompleteness\\tContamination\\n" > {output}
         fi
         
         awk -F "\t" '{{ if (($2 >= {params.compl}) && ($3 <= {params.cont})) {{print $1}} }}' {output} > {loc}/{sample}/tmp/binning/round_{params.round}/bins_keep.txt
