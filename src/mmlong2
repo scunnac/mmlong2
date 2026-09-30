@@ -5,6 +5,9 @@
 
 # Pre-set default settings
 set -eo pipefail
+# A `which` shell function exported by the login shell (as on some HPC systems)
+# reaches the containers, where it fails ("Illegal option --"; issue #13)
+unset -f which 2> /dev/null || true
 script=$(dirname $(which snakemake))
 config1=$script/mmlong2-lite-config.yaml
 snakefile1=$script/mmlong2-lite.smk
