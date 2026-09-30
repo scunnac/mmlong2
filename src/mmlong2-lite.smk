@@ -1045,8 +1045,17 @@ rule Binning_qc:
         elif ls {params.dir}/*.fa > /dev/null 2>&1;
         then
             n=1 && for i in {params.dir}/*.fa; do rsync $i {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit/{sample}.bin.{params.round}.${{n}}.fa && n=$(($n+1)); done
-            checkm2 predict -x .fa -i {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit -o {loc}/{sample}/tmp/binning/round_{params.round}/checkm2 -t {threads}
-            cut -f1,2,3 {loc}/{sample}/tmp/binning/round_{params.round}/checkm2/quality_report.tsv > {output}
+            if checkm2 predict -x .fa -i {loc}/{sample}/tmp/binning/round_{params.round}/bins_innit -o {loc}/{sample}/tmp/binning/round_{params.round}/checkm2 -t {threads} 2> {loc}/{sample}/tmp/binning/round_{params.round}/checkm2.err; then
+                cut -f1,2,3 {loc}/{sample}/tmp/binning/round_{params.round}/checkm2/quality_report.tsv > {output}
+            elif grep -q "No DIAMOND annotation was generated" {loc}/{sample}/tmp/binning/round_{params.round}/checkm2.err; then
+                # CheckM2 cannot assess bins none of whose proteins DIAMOND aligns: the round keeps no bins
+                cat {loc}/{sample}/tmp/binning/round_{params.round}/checkm2.err >&2
+                echo "CheckM2: DIAMOND aligned none of the proteins of round {params.round}'s bins, the round keeps no bins"
+                printf "Name\\tCompleteness\\tContamination\\n" > {output}
+            else
+                cat {loc}/{sample}/tmp/binning/round_{params.round}/checkm2.err >&2
+                exit 1
+            fi
         else
             # a round without bins (see Binning_comebin, Binning_binette) gets an empty quality table
             printf "Name\\tCompleteness\\tContamination\\n" > {output}
