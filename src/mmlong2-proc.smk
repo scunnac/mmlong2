@@ -117,7 +117,7 @@ rule Finalise:
         # Combine data
         contigs <- merge(contigs,contigs_stats,by="contig")
         contigs <- merge(contigs,contigs_qc,by="contig", all=TRUE)
-        contigs[is.na(contigs$var_n),]$var_n <- 0
+        if (any(is.na(contigs$var_n))) contigs[is.na(contigs$var_n),]$var_n <- 0
         contigs$var_perc <- round(contigs$var_n/contigs$len_bp*100,3)
         contigs$wf_name <- "{sample}"
         contigs$wf_read_mode <- "{mode}"
@@ -280,7 +280,7 @@ rule ExtraQC_aggregate:
         colnames(gunc) <- c("bin", "gunc_css", "gunc_rrs", "gunc_pass")
         
         variants <- merge(variants,links,by="contig",all=TRUE)
-        variants[is.na(variants$var_n),]$var_n <- 0
+        if (any(is.na(variants$var_n))) variants[is.na(variants$var_n),]$var_n <- 0
         
         bins <- aggregate(variants$var_n, by=list(variants$bin), FUN=sum)
         colnames(bins) <- c("bin", "var_n")
