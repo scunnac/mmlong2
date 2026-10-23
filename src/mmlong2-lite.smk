@@ -831,7 +831,7 @@ rule Binning_prep_innit:
         sed 1d {loc}/{sample}/tmp/binning/mapping/cov_all_sub.tsv | awk '$2 >= {params.cov}' | cut -f1 | sort > {output.id1}
         comm -23 <(sort {output.id1}) <(sort {loc}/{sample}/tmp/binning/singl/binned.txt) > {output.id2}
         seqkit grep -f {output.id2} {loc}/{sample}/tmp/filtering/asm_filt_prok.fasta | seqkit sort --by-name - > {output.contigs}
-        grep ">" {output.contigs} | cut -c2- > {output.id3}
+        {{ grep ">" {output.contigs} || true; }} | cut -c2- > {output.id3}
         
         head -n1 {input.cov1} > {output.cov1}
         awk 'BEGIN{{FS=OFS="\t"}} NR==FNR{{list[$1]; next}} $1 in list' {output.id3} {input.cov1} | sort >> {output.cov1}
@@ -888,6 +888,8 @@ rule Binning_metabat2:
         """
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/metabat2" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/metabat2; fi
         mkdir {loc}/{sample}/tmp/binning/round_{params.round}/metabat2
+        # a round given fewer than 2 contigs (e.g. all binned as singletons) has no bins
+        if [ $(grep -c ">" {input} || true) -lt 2 ]; then echo "MetaBAT2: fewer than 2 contigs, round {params.round} has no bins"; touch {output}; exit 0; fi
         metabat2 -i {input} -a {loc}/{sample}/tmp/binning/round_{params.round}/cov.tsv -o {loc}/{sample}/tmp/binning/round_{params.round}/metabat2/bins_metabat2 -t {threads} -m {params.len} -s {params.mag_len} --saveCls --seed {params.seed}
         if ! grep -q "metabat2" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "metabat2 " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi	
         """
@@ -910,6 +912,8 @@ rule Binning_vamb:
     shell:
         """
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/vamb" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/vamb; fi
+        # a round given fewer than 2 contigs (e.g. all binned as singletons) has no bins
+        if [ $(grep -c ">" {input} || true) -lt 2 ]; then echo "Vamb: fewer than 2 contigs, round {params.round} has no bins"; mkdir -p {loc}/{sample}/tmp/binning/round_{params.round}/vamb/bins && touch {output}; exit 0; fi
         vamb bin default --fasta {input} --outdir {loc}/{sample}/tmp/binning/round_{params.round}/vamb -m {params.len} --minfasta {params.mag_len} -p {threads} --abundance_tsv {loc}/{sample}/tmp/binning/round_{params.round}/cov_sub.tsv -o "" --seed {params.seed}
         if ! grep -q "vamb" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "vamb " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi	
         """
@@ -933,6 +937,8 @@ rule Binning_semibin2:
     shell:
         """
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/semibin" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/semibin; fi
+        # a round given fewer than 2 contigs (e.g. all binned as singletons) has no bins
+        if [ $(grep -c ">" {input} || true) -lt 2 ]; then echo "SemiBin2: fewer than 2 contigs, round {params.round} has no bins"; mkdir -p {loc}/{sample}/tmp/binning/round_{params.round}/semibin/output_bins && touch {output}; exit 0; fi
         SemiBin2 single_easy_bin -i {input} -b {params.cov} -o {loc}/{sample}/tmp/binning/round_{params.round}/semibin -p {threads} -m {params.len} --minfasta-kbs $(({params.mag_len}/1000)) --self-supervised --sequencing-type long_read --engine cpu --orf-finder {semibin_prot} --compression none --random-seed {params.seed}
         if ! grep -q "semibin" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "semibin " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi  
         """
@@ -959,6 +965,8 @@ rule Binning_binette:
         if [ -d "{loc}/{sample}/tmp/binning/round_{params.round}/binette" ]; then rm -r {loc}/{sample}/tmp/binning/round_{params.round}/binette; fi
         export PYTHONHASHSEED={params.seed}
         dir={loc}/{sample}/tmp/binning/round_{params.round}
+        # a round given fewer than 2 contigs (e.g. all binned as singletons) has no bins
+        if [ $(grep -c ">" {input.asm} || true) -lt 2 ]; then echo "Binette: fewer than 2 contigs, round {params.round} has no bins"; mkdir -p $dir/binette/final_bins && printf "bin_id\\torigin\\tname\\tcompleteness\\tcontamination\\n" > {output}; exit 0; fi
         # Binette 1.1.2 crashes when DIAMOND aligns none of the round's proteins (fixed in 1.2.0);
         # with no protein to assess its bins by, the round has no bins
         binette -d $dir/vamb/bins $dir/metabat2 $dir/semibin/output_bins -c {input.asm} -o $dir/binette -w {params.weight} -m {params.compl} -t {threads} || {{
