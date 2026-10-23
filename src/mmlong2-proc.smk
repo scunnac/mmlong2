@@ -268,7 +268,8 @@ rule ExtraQC_aggregate:
         """
         R --no-echo --silent --args << 'df' > /dev/null 2>&1
         # Contig-level stats
-        variants <- read.delim("{input.variants}", sep="\t", header=F)
+        # no PASS variant at all (e.g. a clean isolate) leaves variants.tsv empty
+        if (file.size("{input.variants}") > 0) variants <- read.delim("{input.variants}", sep="\t", header=F) else variants <- data.frame(character(), integer())
         colnames(variants) <- c("contig","var_n")
         write.table(variants,"{output.contigs}", quote=F,row.names=FALSE, col.names=TRUE, sep = "\t")
         
@@ -334,6 +335,8 @@ rule ExtraQC_variants_call:
     threads: proc_sub
     shell:
         """
+        # a chunk with no contig (fewer binned contigs than chunks) has no variants; samtools view with no region would copy the whole BAM
+        if [ ! -s {input} ]; then echo "Longshot: no contig in chunk {wildcards.split}, no variants"; touch {output.map} {output.var}; exit 0; fi
         samtools view --threads $(({threads} / 2)) -bh {loc}/{sample}/tmp/binning/mapping/1-{params.map}.bam $(cat {input}) | samtools sort --threads $(({threads} / 2)) --write-index -o {output.map}##idx##{output.map}.bai
         longshot --bam {output.map} --ref {loc}/{sample}/tmp/extra_qc/variants/contigs.fasta --out {output.var} -n --min_cov {params.min_cov} --min_mapq {params.min_mapq} --min_alt_frac {params.min_frac} --min_alt_count {params.min_count}
         """
@@ -350,7 +353,7 @@ rule ExtraQC_variants_sum:
     threads: proc
     shell:
         """
-        grep -hv '^#' {input} | awk '$1 ~ /^#/ {{print $0;next}} {{print $0 | "sort -k1,1 -k2,2n"}}' > {output.var_sort}
+        {{ grep -hv '^#' {input} || true; }} | awk '$1 ~ /^#/ {{print $0;next}} {{print $0 | "sort -k1,1 -k2,2n"}}' > {output.var_sort}
         awk -F "\t" '{{ if ($7 == "PASS") {{print $1}} }}' {output.var_sort} | uniq -c - | awk '{{$1=$1;print}}' | awk -F" " '{{print $2,$1}}' OFS='\t' > {output.var_sum}
         if ! grep -q "longshot" {loc}/{sample}/tmp/dep_mmlong2-proc.csv; then conda list | grep -w "longshot " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-proc.csv; fi
         """
