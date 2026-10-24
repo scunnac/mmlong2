@@ -209,7 +209,8 @@ rule Stats_aggregate:
         write.table(gen,"{output.gen}", quote=F,row.names=FALSE, col.names=TRUE, sep = "\t")
         
         # Contig-level stats
-        contigs=read.delim("{input.gc}", sep="\t", header=T)
+        # seqkit fx2tab writes no header line: with header=T the first contig was lost
+        contigs=read.delim("{input.gc}", sep="\t", header=F)
         colnames(contigs) <- c("contig", "gc")
         write.table(contigs,"{output.contigs}", quote=F,row.names=FALSE, col.names=TRUE, sep = "\t")
         """
