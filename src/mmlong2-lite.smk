@@ -172,7 +172,8 @@ rule Finalise:
         abund=os.path.join(loc, sample, "tmp/binning/bin_abund.tsv"),
         cov=os.path.join(loc, sample, "tmp/binning/bin_cov.tsv"),
         checkm1=os.path.join(loc, sample, "tmp/binning/checkm1.tsv"),
-        checkm2=os.path.join(loc, sample, "tmp/binning/checkm2.tsv"),
+        checkm2=os.path.join(loc, sample, "tmp/binning/checkm2_final.tsv"),
+        checkm2_round=os.path.join(loc, sample, "tmp/binning/checkm2.tsv"),
         clean=os.path.join(loc, sample, "tmp/logs/cleanup.txt"),
     output:
         df1=os.path.join(loc, sample, "tmp/binning/bins_mmlong2-lite.tsv"),
@@ -195,6 +196,10 @@ rule Finalise:
         colnames(checkm1) <- c("bin","completeness_checkm1","contamination_checkm1","strain_heterogeneity_checkm1")
         checkm2 <- read.delim("{input.checkm2}", sep="\t", header=T)
         colnames(checkm2) <- c("bin","completeness_checkm2","contamination_checkm2")
+        # the figures each binning round selected its bins on: Binette's own for Binette's rounds
+        checkm2_round <- read.delim("{input.checkm2_round}", sep="\t", header=T)
+        colnames(checkm2_round) <- c("bin","completeness_round","contamination_round")
+        checkm2 <- merge(checkm2,checkm2_round,by="bin")
         bins <- merge(checkm1,merge(checkm2,merge(quast,merge(cov,abund,by="bin"),by="bin"), by="bin"),by="bin")
         bins$wf_name <- "{sample}"
         bins$wf_read_mode <- "{mode}"
@@ -1123,6 +1128,27 @@ rule Binning_qc2:
         rsync -r {loc}/{sample}/tmp/binning/bins {loc}/{sample}/results/.
         """
 
+rule Binning_qc3:
+    conda: config["env_8"]
+    input:
+        os.path.join(loc, sample, "tmp/binning/bins_keep.txt"),
+    output:
+        os.path.join(loc, sample, "tmp/binning/checkm2_final.tsv"),
+    benchmark:
+        os.path.join(loc, sample, "tmp/logs/usage_binning_qc3.tsv")
+    threads: proc
+    shell:
+        """
+        # CheckM2 on the final bins: for Binette's rounds, Binning_qc keeps Binette's own estimates
+        if [ -d "{loc}/{sample}/tmp/binning/checkm2_final" ]; then rm -r {loc}/{sample}/tmp/binning/checkm2_final; fi
+        if ls {loc}/{sample}/tmp/binning/bins/*.fa > /dev/null 2>&1; then
+            checkm2 predict -x .fa -i {loc}/{sample}/tmp/binning/bins -o {loc}/{sample}/tmp/binning/checkm2_final -t {threads}
+            cut -f1,2,3 {loc}/{sample}/tmp/binning/checkm2_final/quality_report.tsv > {output}
+        else
+            printf "Name\\tCompleteness\\tContamination\\n" > {output}
+        fi
+        """
+
 rule Summary_coverage:
     conda: config["env_1"]
     input:
@@ -1165,6 +1191,7 @@ rule Summary_usage:
     conda: config["env_1"]
     input:
         os.path.join(loc, sample, "tmp/binning/contig_bin.tsv"),
+        os.path.join(loc, sample, "tmp/binning/checkm2_final.tsv"),
     output:
         os.path.join(loc, sample, "tmp/logs/summary_mmlong2-lite.tsv")
     threads: proc
@@ -1258,6 +1285,7 @@ rule Cleanup:
         if [ -d "{loc}/{sample}/tmp/binning/round_2/checkm2" ]; then rm -r {loc}/{sample}/tmp/binning/round_2/checkm2; fi
         if [ -d "{loc}/{sample}/tmp/binning/round_4/checkm2" ]; then rm -r {loc}/{sample}/tmp/binning/round_4/checkm2; fi
         if [ -d "{loc}/{sample}/tmp/binning/checkm1" ]; then rm -r {loc}/{sample}/tmp/binning/checkm1; fi
+        if [ -d "{loc}/{sample}/tmp/binning/checkm2_final" ]; then rm -r {loc}/{sample}/tmp/binning/checkm2_final; fi
 
         if [ -d "{loc}/{sample}/tmp/binning/round_1/binette/temporary_files" ]; then rm -r {loc}/{sample}/tmp/binning/round_1/binette/temporary_files; fi
         if [ -d "{loc}/{sample}/tmp/binning/round_3/binette/temporary_files" ]; then rm -r {loc}/{sample}/tmp/binning/round_3/binette/temporary_files; fi
