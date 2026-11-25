@@ -660,7 +660,7 @@ rule Taxonomy_bins:
         export GTDBTK_DATA_PATH="{params.db}"
 		
         org_dir=$(pwd) && cd {loc}/{sample}/tmp/taxa
-        gtdbtk classify_wf --cpus {threads} --genome_dir {loc}/{sample}/results/bins --extension .fa --out_dir gtdb --tmpdir $(pwd) --skip_ani_screen
+        gtdbtk classify_wf --cpus {threads} --genome_dir {loc}/{sample}/results/bins --extension .fa --out_dir gtdb --tmpdir $(pwd) --place_species
         cat {loc}/{sample}/tmp/taxa/gtdb/classify/gtdbtk.bac120.summary.tsv > {output}
         if [ -f "{loc}/{sample}/tmp/taxa/gtdb/classify/gtdbtk.ar53.summary.tsv" ]; then tail -n+2 {loc}/{sample}/tmp/taxa/gtdb/classify/gtdbtk.ar53.summary.tsv >> {output}; fi
         cd $org_dir
