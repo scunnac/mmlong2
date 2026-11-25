@@ -16,7 +16,7 @@ db_gunc: /path/to/gunc/database_file.dmnd
 db_barrnap: arc
 db_trnascan: A
 dl_bakta: https://zenodo.org/records/14916843/files/db.tar.xz
-dl_gtdb: https://data.ace.uq.edu.au/public/gtdb/data/releases/release226/226.0/auxillary_files/gtdbtk_package/full_package/gtdbtk_r226_data.tar.gz
+dl_gtdb: https://data.ace.uq.edu.au/public/gtdb/data/releases/release232/232.0/auxillary_files/gtdbtk_package/full_package/gtdbtk_r232_data.tar.gz
 dl_rrna: https://zenodo.org/records/17174373/files/greengenes2_2024.09.udb.gz
 dl_metabuli: https://hulk.mmseqs.com/jaebeom/gtdb226db/
 dl_gunc: https://swifter.embl.de/~fullam/gunc/gunc_db_progenomes2.1.dmnd.gz

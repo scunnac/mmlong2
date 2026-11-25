@@ -1,7 +1,6 @@
 channels:
-  - defaults
   - conda-forge
   - bioconda
 dependencies:
-  - gtdbtk=2.5.2
+  - gtdbtk=2.8.0
   - numpy=2.2.6

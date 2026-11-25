@@ -264,7 +264,7 @@ then
 	wget -O gtdb.tar.gz $dl_gtdb
 	echo "Extracting..."
 	pv gtdb.tar.gz | pigz -dc - | tar xf - -C .
-	mv release226 db_gtdb
+	mv release232 db_gtdb
 	yq -y -i ".db_gtdb = \"${db_dir}/mmlong2_db_v${version}/db_gtdb\"" $config2
 	rm gtdb.tar.gz
 	echo "GTDB database installation completed at $(date +'%Y-%d-%m %H:%M:%S')"
