@@ -1010,18 +1010,20 @@ rule Binning_comebin:
         run_comebin.sh -a {input.contigs} -o $comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size || [ ! -s $seed ]
         # When the contigs carry too few marker genes, COMEbin's test_getmarker_2quarter.pl
         # writes no seed file and COMEbin ends without result. Retry with the seeds of the script's own
-        # "max effort" mode (which COMEbin never uses); with still no seeds, the round has no bins.
+        # "max effort" mode (which COMEbin never uses); with still no seeds, or when COMEbin fails
+        # again on those few seeds (no marker gene in any of its bins: "max() arg is an empty
+        # sequence" in get_final_result.py), the round has no bins.
         if [ ! -s $comebin/comebin_res/comebin_res.tsv ] && [ ! -s $seed ] && [ -s {input.contigs}.bacar_marker.hmmout ]; then
             marker=$(dirname $(realpath $(command -v run_comebin.sh)))/auxiliary/test_getmarker_2quarter.pl
             perl -e '@a = @ARGV; @ARGV = @a[0..3]; do $a[4] or die "$a[4]: $@ $!\\n"; gethmmmarker(@a[0..3], 1)' {input.contigs}.bacar_marker.hmmout {input.contigs} 1001 $seed $marker
             if [ -s $seed ]; then
                 echo "COMEbin: too few marker genes for its seeds, retrying with $(wc -l < $seed) seed contigs"
                 rm -rf $comebin/comebin_res/cluster_res
-                run_comebin.sh -a {input.contigs} -o $comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size
+                run_comebin.sh -a {input.contigs} -o $comebin -t {threads} -p {loc}/{sample}/tmp/binning/round_{params.round}/mapping -b $batch_size || echo "COMEbin: failed again with those seeds"
             fi
         fi
-        if [ ! -s $comebin/comebin_res/comebin_res.tsv ] && [ ! -s $seed ] && [ -s {input.contigs}.bacar_marker.hmmout ]; then
-            echo "COMEbin: no marker genes for its seeds, round {params.round} has no bins"
+        if [ ! -s $comebin/comebin_res/comebin_res.tsv ] && [ -s {input.contigs}.bacar_marker.hmmout ]; then
+            echo "COMEbin: too few marker genes for its seeds, round {params.round} has no bins"
             mkdir -p $comebin/comebin_res/comebin_res_bins && touch $comebin/comebin_res/comebin_res.tsv
         fi
         if ! grep -q "comebin" {loc}/{sample}/tmp/dep_mmlong2-lite.csv; then conda list | grep -w "comebin " | tr -s ' ' | awk '{{print $1","$2}}' >> {loc}/{sample}/tmp/dep_mmlong2-lite.csv; fi	
